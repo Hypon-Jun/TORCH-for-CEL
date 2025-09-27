@@ -1,0 +1,169 @@
+from .acc_functions import PiOptimizer, ThetaOptimizer, DeltaOptimizer
+import numpy as np
+
+def TORCH(X, y, q, varrho,
+          # 所有的底层依赖函数
+          function_value_func,
+          update_lamb_func,
+          # Pi Solver 依赖
+          learning_rate_pi_func, grad_of_pi_func,
+          # Delta Optimizer 依赖
+          learning_rate_delta_func, grad_of_delta_func,
+          # Theta Optimizer 依赖
+          learning_rate_theta_func, projection_Omega_func, grad_of_theta_func,
+          # 求解器选择和迭代参数
+          iterations=10000,
+          theta_solver='PGD',
+          delta_solver = 'PGD',
+          pi_solver='PGD'):
+    """
+    TORCH (Theta/Delta/Pi/Lambda Alternating Optimization) 求解器的主要迭代循环。
+
+    Args:
+        X (np.ndarray): 输入特征矩阵 (n x p)。
+        y (np.ndarray): 标签矩阵 (n x m)。
+        q (int): Delta 的 Box Quantile 约束参数。
+        varrho (float): 正则化超参数。
+        ..._func: 所有的底层依赖函数。
+        iterations (int): 最大迭代次数。
+        theta_solver (str): Theta 优化算法 ('PGD' 或 'APGD')。
+        delta_solver (str): Pi 优化算法 ('PGD' 或 'Overrelaxation')。
+        pi_solver (str): Pi 优化算法 ('PGD' 或 'APGD')。
+    """
+
+    # 获取维度
+    n, p = X.shape  # N=样本数, P=特征数
+    _, m = y.shape  # M=任务数
+
+    # 1. 初始化变量 (Pi, Delta, Lamb, Theta)
+
+    # Pi: 维度 N (n x 1), 初始化为均匀权重
+    pi = np.ones(n) / n
+
+    # Delta: 维度 N (n x 1), 初始化为零向量
+    delta = np.zeros(n)
+
+    # Theta (Coef): 维度 P x M, 初始化为零矩阵
+    theta = np.zeros((p, m))
+
+    # Lambda (乘子): 维度 P x M, 初始化为零矩阵
+    lamb = np.zeros((p, m))
+
+    # 2. 实例化所有优化器类 (依赖注入)
+    # 注意：这里假设您的 PiSolver, DeltaOptimizer, ThetaOptimizer 类已在外部定义
+
+    pi_optimizer = PiOptimizer(
+        learning_rate_pi_func=learning_rate_pi_func,
+        grad_of_pi_func=grad_of_pi_func,
+        function_value_func=function_value_func
+    )
+
+    delta_optimizer = DeltaOptimizer(
+        learning_rate_delta_func=learning_rate_delta_func,
+        grad_of_delta_func=grad_of_delta_func,
+        function_value_func=function_value_func
+    )
+
+    theta_optimizer = ThetaOptimizer(
+        learning_rate_theta_func=learning_rate_theta_func,
+        projection_Omega_func=projection_Omega_func,
+        grad_of_theta_func=grad_of_theta_func,
+        function_value_func=function_value_func
+    )
+
+    # 3. 主迭代循环 (TORCH 算法)
+    for t in range(iterations):
+        # 保存前一步的值用于收敛检查
+        tmp_pi = pi.copy()
+        tmp_lamb = lamb.copy()
+        tmp_delta = delta.copy()
+        tmp_theta = theta.copy()
+
+        # --- 步骤 1: 更新 Theta (P x M) ---
+        # 调用 PGD 或 APGD 方法
+        if theta_solver == 'PGD':
+            theta = theta_optimizer.update_theta_pgd(
+                pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
+                coef=theta
+            )
+        elif theta_solver == 'APGD':
+            theta = theta_optimizer.accelerated_PGD_theta(
+                pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
+                coef=theta
+            )
+        else:
+            raise ValueError("Invalid theta_solver. Use 'PGD' or 'APGD'.")
+
+        # --- 步骤 2: 更新 Delta (N) ---
+        # 使用 DeltaOptimizer 的 line search 或 accelerated overrelaxation
+        if delta_solver == 'PGD':
+            # 方案 1: PGD (带 Line Search 的 Proximal Gradient Descent)
+            delta = delta_optimizer.update_delta_box_quantile(
+                pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
+                theta=theta, q=q
+            )
+        elif delta_solver == 'Overrelaxation':
+            # 方案 2: APGD (带 Overrelaxation 的 Accelerated PGD)
+            delta = delta_optimizer.accelerated_delta_overrelaxation(
+                pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
+                coef=theta, q=q
+            )
+        else:
+            raise ValueError("Invalid delta_solver. Use 'PGD' or 'Overrelaxation'.")
+
+        # --- 步骤 3: 更新 Pi (N) ---
+        # 调用 PGD 或 Accelerated Entropic Descent 方法
+        if pi_solver == 'PGD':
+            pi = pi_optimizer.update_pi_mirror(
+                pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
+                theta=theta
+            )
+        elif pi_solver == 'APGD':
+            # 假设 accelerated_entropic_descent 是 APGD 的一个变体
+            pi = pi_optimizer.accelerated_entropic_descent(
+                pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
+                coef=theta
+            )
+        else:
+            raise ValueError("Invalid pi_solver. Use 'PGD' or 'APGD'.")
+
+        # --- 步骤 4: 更新 Lambda (P x M) ---
+        # 外部传入的独立函数（通常是 ADMM/Augmented Lagrangian 的对偶更新）
+        lamb = update_lamb_func(
+            pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y, theta=theta
+        )
+
+        # --- 步骤 5: 检查收敛条件 ---
+        # 检查目标函数值是否稳定
+        current_value = function_value_func(pi, delta, lamb, varrho, X, y, theta)
+        previous_value = function_value_func(tmp_pi, tmp_delta, tmp_lamb, varrho, X, y, tmp_theta)
+
+        if np.abs(current_value - previous_value) < 1e-6:
+            print(f"TORCH converged at iteration {t + 1}. Function Value: {current_value:.6f}")
+            break
+
+        if t == iterations - 1:
+            print(f"TORCH stopped after {iterations} iterations without convergence.")
+
+    return pi, delta, theta
+
+
+# def TORCH(pi, delta, lamb, varrho, X, y, theta, q, iterations=10000):
+#     for t in range(iterations):
+#         tmp_pi = pi.copy()
+#         tmp_lamb = lamb.copy()
+#         tmp_delta = delta.copy()
+#         tmp_theta = theta.copy()
+#
+#         theta = update_theta_PGD(pi, delta, lamb, varrho, X, y, theta)
+#
+#         delta = update_delta_box_quantile(pi, delta, lamb, varrho, X, y, theta, q)
+#
+#         pi = update_pi_entropic_descent(pi, delta, lamb, varrho, X, y, theta)
+#
+#         lamb = update_lamb(pi, delta, lamb, varrho, X, y, theta)
+#
+#         if abs(function_value(pi, delta, lamb, varrho, X, y, theta) -
+#                function_value(tmp_pi, tmp_delta, tmp_lamb, varrho, X, y, tmp_theta)) < 1e-6:
+#             break
+#     return pi, delta, theta
