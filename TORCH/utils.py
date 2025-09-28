@@ -1,6 +1,17 @@
 from .acc_functions import PiOptimizer, ThetaOptimizer, DeltaOptimizer
 import numpy as np
 
+
+def safe_trace(a, b):
+    """Compute np.dot(a, b).
+    If result is scalar, return scalar.
+    If result is matrix, return its trace."""
+    val = np.dot(a, b)
+    if np.ndim(val) == 0:  # scalar
+        return val.item()
+    else:  # array/matrix
+        return np.trace(val)
+
 def TORCH(X, y, q, varrho,
           # 底层依赖函数
           structure_constraint,
@@ -14,25 +25,25 @@ def TORCH(X, y, q, varrho,
           iterations=10000,
           theta_solver='PGD',
           delta_solver='PGD',
-          pi_solver='PGD'):
+          pi_solver='ED'):
     """
     TORCH (Theta/Delta/Pi/Lambda Alternating Optimization) 求解器的主要迭代循环。
 
     Args:
         X (np.ndarray): 输入特征矩阵 (n x p)。
-        y (np.ndarray): 标签矩阵 (n x m)。
+        y (np.ndarray or None): 标签矩阵 (n x m)。
         q (int): Delta 的 Box Quantile 约束参数。
         varrho (float): 正则化超参数。
         ..._func: 所有的底层依赖函数。
         iterations (int): 最大迭代次数。
         theta_solver (str): Theta 优化算法 ('PGD' 或 'APGD')。
         delta_solver (str): Pi 优化算法 ('PGD' 或 'Overrelaxation')。
-        pi_solver (str): Pi 优化算法 ('PGD' 或 'APGD')。
+        pi_solver (str): Pi 优化算法 ('ED' 或 'AED')。
     """
 
     # --- 嵌套函数: 目标函数值 ---
     def function_value_func(pi, delta, lamb, varrho, X, y, theta):
-        return -np.sum(np.log(pi)) + np.dot(lamb, structure_constraint(pi, delta, X, y, theta)) + 0.5 * varrho * np.sum((structure_constraint(pi, delta, X, y, theta))**2)
+        return -np.sum(np.log(pi)) + safe_trace(lamb, structure_constraint(pi, delta, X, y, theta)) + 0.5 * varrho * np.sum((structure_constraint(pi, delta, X, y, theta))**2)
 
     # --- 嵌套函数: Lambda 更新 ---
     def update_lamb_func(pi, delta, lamb, varrho, X, y, theta):
@@ -40,7 +51,17 @@ def TORCH(X, y, q, varrho,
 
     # 获取维度
     n, p = X.shape  # N=样本数, P=特征数
-    _, m = y.shape  # M=任务数
+
+    if y is None:
+        # 如果 y 为 None (无监督场景), 将任务数 M 设置为 1
+        m = 1
+        # 警告: 确保所有依赖 y 的底层函数都被修改为不使用或忽略 y
+    else:
+        # 确保 y 的形状是 (N, M)
+        if y.shape[0] != n:
+            raise ValueError("y 的样本数必须与 X 的样本数匹配。")
+
+        _, m = y.shape  # M=任务数 (M >= 1)
 
     # 1. 初始化变量 (Pi, Delta, Lamb, Theta)
 
@@ -51,10 +72,16 @@ def TORCH(X, y, q, varrho,
     delta = np.zeros(n)
 
     # Theta (Coef): 维度 P x M, 初始化为零矩阵
-    theta = np.zeros((p, m))
+    if m == 1:
+        theta = np.zeros(p)
+    else:
+        theta = np.zeros((p, m))
 
     # Lambda (乘子): 维度 P x M, 初始化为零矩阵
-    lamb = np.zeros((p, m))
+    if m == 1:
+        lamb = np.zeros(p)
+    else:
+        lamb = np.zeros((p, m))
 
     # 2. 实例化所有优化器类 (依赖注入)
     # 注意：这里假设您的 PiSolver, DeltaOptimizer, ThetaOptimizer 类已在外部定义
@@ -119,20 +146,20 @@ def TORCH(X, y, q, varrho,
             raise ValueError("Invalid delta_solver. Use 'PGD' or 'Overrelaxation'.")
 
         # --- 步骤 3: 更新 Pi (N) ---
-        # 调用 PGD 或 Accelerated Entropic Descent 方法
-        if pi_solver == 'PGD':
+        # 调用 Entropic Descent (ED) 或 Accelerated Entropic Descent (AED) 方法
+        if pi_solver == 'ED':
             pi = pi_optimizer.update_pi_mirror(
                 pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
                 theta=theta
             )
-        elif pi_solver == 'APGD':
+        elif pi_solver == 'AED':
             # 假设 accelerated_entropic_descent 是 APGD 的一个变体
             pi = pi_optimizer.accelerated_entropic_descent(
                 pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
                 coef=theta
             )
         else:
-            raise ValueError("Invalid pi_solver. Use 'PGD' or 'APGD'.")
+            raise ValueError("Invalid pi_solver. Use 'ED' or 'AED'.")
 
         # --- 步骤 4: 更新 Lambda (P x M) ---
         # 外部传入的独立函数（通常是 ADMM/Augmented Lagrangian 的对偶更新）
@@ -155,22 +182,3 @@ def TORCH(X, y, q, varrho,
     return pi, delta, theta
 
 
-# def TORCH(pi, delta, lamb, varrho, X, y, theta, q, iterations=10000):
-#     for t in range(iterations):
-#         tmp_pi = pi.copy()
-#         tmp_lamb = lamb.copy()
-#         tmp_delta = delta.copy()
-#         tmp_theta = theta.copy()
-#
-#         theta = update_theta_PGD(pi, delta, lamb, varrho, X, y, theta)
-#
-#         delta = update_delta_box_quantile(pi, delta, lamb, varrho, X, y, theta, q)
-#
-#         pi = update_pi_entropic_descent(pi, delta, lamb, varrho, X, y, theta)
-#
-#         lamb = update_lamb(pi, delta, lamb, varrho, X, y, theta)
-#
-#         if abs(function_value(pi, delta, lamb, varrho, X, y, theta) -
-#                function_value(tmp_pi, tmp_delta, tmp_lamb, varrho, X, y, tmp_theta)) < 1e-6:
-#             break
-#     return pi, delta, theta

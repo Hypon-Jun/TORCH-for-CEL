@@ -2,6 +2,8 @@
 
 from .utils import TORCH # 假设 TORCH 类在这个文件里
 from .acc_functions import PiOptimizer, ThetaOptimizer, DeltaOptimizer # 优化器工具类通常也需要公开，以便用户自定义或查看
+from .exp_regression import TORCH_regression
+from .exp_location import TORCH_location
 
 # --------------------
 # 定义 __all__ 列表
@@ -9,6 +11,8 @@ from .acc_functions import PiOptimizer, ThetaOptimizer, DeltaOptimizer # 优化�
 
 __all__ = [
     'TORCH',  # 将 TORCH 求解器类添加到公共接口
+    'TORCH_regression',
+    'TORCH_location',
     'PiOptimizer', # 通常也暴露优化器类，以便用户或内部模块访问
     'ThetaOptimizer',
     'DeltaOptimizer',

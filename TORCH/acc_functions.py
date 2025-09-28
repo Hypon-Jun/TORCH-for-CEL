@@ -1,6 +1,16 @@
 import numpy as np
 
 
+def safe_trace(a, b):
+    """Compute np.dot(a, b).
+    If result is scalar, return scalar.
+    If result is matrix, return its trace."""
+    val = np.dot(a, b)
+    if np.ndim(val) == 0:  # scalar
+        return val.item()
+    else:  # array/matrix
+        return np.trace(val)
+
 class PiOptimizer:
     """
     封装了 pi 变量的优化逻辑，包括加速和非加速的熵正则化梯度下降。
@@ -347,7 +357,7 @@ class ThetaOptimizer:
     # --- APGD Bregman/Quadratic Approximation Functions ---
 
     def breg_loss(self, parameter1, parameter2, loss, grad_loss):
-        return loss(parameter1) - loss(parameter2) - np.dot(grad_loss(parameter2), parameter1 - parameter2)
+        return loss(parameter1) - loss(parameter2) - safe_trace(grad_loss(parameter2), parameter1 - parameter2)
 
     def breg_l2(self, parameter1, parameter2):
         """计算 L2 范数对应的 Bregman 散度 (即 L2 范数平方的一半)"""
@@ -413,7 +423,7 @@ class ThetaOptimizer:
 
             rhs = rho * (self.function_value_func(pi, delta, lamb, varrho, X, y, tmp_theta) -
                          self.function_value_func(pi, delta, lamb, varrho, X, y, theta) -
-                         np.dot(grad, tmp_theta - theta))
+                         safe_trace(grad, tmp_theta - theta))
 
             if lhs >= rhs:
                 break
