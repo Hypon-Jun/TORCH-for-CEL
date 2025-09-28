@@ -682,31 +682,31 @@ class DeltaOptimizer:
         return rho
 
     # --- 核心函数 2: update_delta_optimal_rho (主循环) ---
-    def update_delta_box_quantile(self, pi, delta, lamb, varrho, X, y, coef, q, iterations=10000):
+    def update_delta_box_quantile(self, pi, delta, lamb, varrho, X, y, theta, q, iterations=10000):
         delta_update = delta.copy()
 
         # 调用注入的学习率函数
-        initial_rho = self.learning_rate_delta_func(pi, delta, lamb, varrho, X, y, coef) * 5
+        initial_rho = self.learning_rate_delta_func(pi, delta, lamb, varrho, X, y, theta) * 5
 
         for t in range(iterations):
             tmp_delta = delta_update.copy()
 
             # **调用内嵌的 line_search_delta 方法**
-            rho = self.line_search_delta(pi, delta_update.copy(), lamb, varrho, X, y, coef, q, initial_rho=initial_rho)
+            rho = self.line_search_delta(pi, delta_update.copy(), lamb, varrho, X, y, theta, q, initial_rho=initial_rho)
 
             # 投影梯度下降步骤 (Proximal Gradient Descent)
 
             # 1. 梯度下降一步，并执行 ReLU (np.maximum(..., 0)) 以满足非负约束
             tmp = np.maximum(
                 delta_update.copy() - rho * self.grad_of_delta_func(pi.copy(), delta_update.copy(), lamb.copy(), varrho,
-                                                                    X.copy(), y.copy(), coef.copy()), 0)
+                                                                    X.copy(), y.copy(), theta.copy()), 0)
 
             # 2. 调用内嵌的 Box Quantile Thresholding 投影
             delta_update = self.box_quantile_thresholding(tmp, q)
 
             # 检查收敛条件
-            if abs(self.function_value_func(pi, delta_update, lamb, varrho, X, y, coef) -
-                   self.function_value_func(pi, tmp_delta, lamb, varrho, X, y, coef)) < 1e-6:
+            if abs(self.function_value_func(pi, delta_update, lamb, varrho, X, y, theta) -
+                   self.function_value_func(pi, tmp_delta, lamb, varrho, X, y, theta)) < 1e-6:
                 break
 
         return delta_update

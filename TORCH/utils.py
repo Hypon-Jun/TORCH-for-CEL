@@ -3,8 +3,7 @@ import numpy as np
 
 def TORCH(X, y, q, varrho,
           # 所有的底层依赖函数
-          function_value_func,
-          update_lamb_func,
+          structure_constraint,
           # Pi Solver 依赖
           learning_rate_pi_func, grad_of_pi_func,
           # Delta Optimizer 依赖
@@ -14,7 +13,7 @@ def TORCH(X, y, q, varrho,
           # 求解器选择和迭代参数
           iterations=10000,
           theta_solver='PGD',
-          delta_solver = 'PGD',
+          delta_solver='PGD',
           pi_solver='PGD'):
     """
     TORCH (Theta/Delta/Pi/Lambda Alternating Optimization) 求解器的主要迭代循环。
@@ -30,6 +29,14 @@ def TORCH(X, y, q, varrho,
         delta_solver (str): Pi 优化算法 ('PGD' 或 'Overrelaxation')。
         pi_solver (str): Pi 优化算法 ('PGD' 或 'APGD')。
     """
+
+    # --- 嵌套函数: 目标函数值 ---
+    def function_value_func(pi, delta, lamb, varrho, X, y, theta):
+        return -np.sum(np.log(pi)) + np.dot(lamb, structure_constraint(pi, delta, X, y, theta)) + 0.5 * varrho * np.sum((structure_constraint(pi, delta, X, y, theta))**2)
+
+    # --- 嵌套函数: Lambda 更新 ---
+    def update_lamb_func(pi, delta, lamb, varrho, X, y, theta):
+        return lamb + varrho * structure_constraint(pi, delta, X, y, theta)
 
     # 获取维度
     n, p = X.shape  # N=样本数, P=特征数
