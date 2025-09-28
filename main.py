@@ -5,6 +5,6 @@ TORCH()
 
 TORCH_regression()
 
-PiOptimizer()
+
 
 TORCH_location()
