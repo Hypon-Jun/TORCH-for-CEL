@@ -2,7 +2,7 @@ from .acc_functions import PiOptimizer, ThetaOptimizer, DeltaOptimizer
 import numpy as np
 
 def TORCH(X, y, q, varrho,
-          # 所有的底层依赖函数
+          # 底层依赖函数
           structure_constraint,
           # Pi Solver 依赖
           learning_rate_pi_func, grad_of_pi_func,
