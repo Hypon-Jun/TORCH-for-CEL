@@ -3,7 +3,15 @@ from scipy.linalg import eigh
 from .utils import TORCH
 
 def structure_constraint(pi, delta, X, y, theta):
-    return (1 - delta)[:, np.newaxis] * pi[:, np.newaxis] * (X - theta)  # Shape: (n, m)
+    # Step 1: Compute X - mu (n x m)
+    X_minus_mu = X - theta  # Shape: (n, m)
+
+    # Step 2: Compute the weighted summation (n x m)
+    weighted_summation = (1 - delta)[:, np.newaxis] * pi[:, np.newaxis] * X_minus_mu  # Shape: (n, m)
+
+    # Step 3: Sum over all samples (n x m) to get a vector of size (m,)
+    summation = np.sum(weighted_summation, axis=0)  # Shape: (m,)
+    return summation  # Shape: (n, m)
 
 def learning_rate_pi(pi, delta, lamb, varrho, X, y, theta):
     tmp = (X - theta) * ((1 - delta)[:, np.newaxis])

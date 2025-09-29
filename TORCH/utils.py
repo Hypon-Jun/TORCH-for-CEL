@@ -23,6 +23,9 @@ def TORCH(X, y, q, varrho,
           learning_rate_theta_func, projection_Omega_func, grad_of_theta_func,
           # 求解器选择和迭代参数
           iterations=10000,
+          iterations_pi=10000,
+          iterations_delta=10000,
+          iterations_theta=10000,
           theta_solver='PGD',
           delta_solver='PGD',
           pi_solver='ED'):
@@ -30,10 +33,10 @@ def TORCH(X, y, q, varrho,
     TORCH (Theta/Delta/Pi/Lambda Alternating Optimization) 求解器的主要迭代循环。
 
     Args:
-        X (np.ndarray): 输入特征矩阵 (n x p)。
-        y (np.ndarray or None): 标签矩阵 (n x m)。
-        q (int): Delta 的 Box Quantile 约束参数。
-        varrho (float): 正则化超参数。
+        X (np.ndarray): Design Matrix (n x p)。
+        y (np.ndarray or None): Response Matrix (n x m)。
+        q (int): Outlier Budget。
+        varrho (float): Penalty Parameter of TORCH。
         ..._func: 所有的底层依赖函数。
         iterations (int): 最大迭代次数。
         theta_solver (str): Theta 优化算法 ('PGD' 或 'APGD')。
@@ -118,12 +121,12 @@ def TORCH(X, y, q, varrho,
         if theta_solver == 'PGD':
             theta = theta_optimizer.update_theta_pgd(
                 pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
-                coef=theta
+                coef=theta, iterations=iterations_theta
             )
         elif theta_solver == 'APGD':
             theta = theta_optimizer.accelerated_PGD_theta(
                 pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
-                coef=theta
+                coef=theta, iterations=iterations_theta
             )
         else:
             raise ValueError("Invalid theta_solver. Use 'PGD' or 'APGD'.")
@@ -134,13 +137,13 @@ def TORCH(X, y, q, varrho,
             # 方案 1: PGD (带 Line Search 的 Proximal Gradient Descent)
             delta = delta_optimizer.update_delta_box_quantile(
                 pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
-                theta=theta, q=q
+                theta=theta, q=q, iterations=iterations_delta
             )
         elif delta_solver == 'Overrelaxation':
             # 方案 2: APGD (带 Overrelaxation 的 Accelerated PGD)
             delta = delta_optimizer.accelerated_delta_overrelaxation(
                 pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
-                coef=theta, q=q
+                coef=theta, q=q, iterations=iterations_delta
             )
         else:
             raise ValueError("Invalid delta_solver. Use 'PGD' or 'Overrelaxation'.")
@@ -150,13 +153,13 @@ def TORCH(X, y, q, varrho,
         if pi_solver == 'ED':
             pi = pi_optimizer.update_pi_mirror(
                 pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
-                theta=theta
+                theta=theta, iterations=iterations_pi
             )
         elif pi_solver == 'AED':
             # 假设 accelerated_entropic_descent 是 APGD 的一个变体
             pi = pi_optimizer.accelerated_entropic_descent(
                 pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
-                coef=theta
+                coef=theta, iterations=iterations_pi
             )
         else:
             raise ValueError("Invalid pi_solver. Use 'ED' or 'AED'.")

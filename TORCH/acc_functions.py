@@ -246,11 +246,11 @@ class PiOptimizer:
             pi_tmp = pi_update.copy()
 
             # 调用内嵌的 line_search_mirror 方法
-            rho = self.line_search_mirror(pi_update.copy(), delta.copy(), lamb.copy(), varrho, X.copy(), y.copy(),
-                                       theta.copy(), initial_rho=initial_rho)
+            rho = self.line_search_mirror(pi_update, delta, lamb, varrho, X, y,
+                                       theta, initial_rho=initial_rho)
 
-            grad = self.grad_of_pi_func(pi_update.copy(), delta.copy(), lamb.copy(), varrho, X.copy(), y.copy(),
-                                        theta.copy())
+            grad = self.grad_of_pi_func(pi_update, delta, lamb, varrho, X, y,
+                                        theta)
             pi_update_0 = pi_update.copy() * np.exp(-rho * grad)
             pi_update = pi_update_0 / np.sum(pi_update_0)  # 归一化
 
@@ -708,8 +708,8 @@ class DeltaOptimizer:
 
             # 1. 梯度下降一步，并执行 ReLU (np.maximum(..., 0)) 以满足非负约束
             tmp = np.maximum(
-                delta_update.copy() - rho * self.grad_of_delta_func(pi.copy(), delta_update.copy(), lamb.copy(), varrho,
-                                                                    X.copy(), y.copy(), theta.copy()), 0)
+                delta_update.copy() - rho * self.grad_of_delta_func(pi, delta_update, lamb, varrho,
+                                                                    X, y, theta), 0)
 
             # 2. 调用内嵌的 Box Quantile Thresholding 投影
             delta_update = self.box_quantile_thresholding(tmp, q)

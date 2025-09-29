@@ -30,7 +30,7 @@ def grad_of_pi(pi, delta, lamb, varrho, X, y, theta):
 
 
 def grad_of_delta(pi, delta, lamb, varrho, X, y, theta):
-    return - (pi.copy()) * (np.dot(X.copy(), theta.copy())-y.copy()) * (np.dot(X.copy(),lamb.copy())) - varrho * \
+    return - (pi.copy()) * (np.dot(X.copy(), theta.copy())-y.copy()) * (np.dot(X.copy(), lamb.copy())) - varrho * \
            np.dot(np.dot(np.diag((pi.copy()) * (np.dot(X.copy(), theta.copy()) - y.copy())), X.copy()), np.dot(np.dot((X.copy()).T, np.diag(pi.copy() * (1 - delta.copy()))), (np.dot(X.copy(), theta.copy()) - y.copy())))
 
 def grad_of_theta(pi, delta, lamb, varrho, X, y, theta):
