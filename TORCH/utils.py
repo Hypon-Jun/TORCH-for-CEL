@@ -16,12 +16,17 @@ def TORCH(X, y, q, varrho,
           # 底层依赖函数
           structure_constraint,
           # Pi Solver 依赖
-          learning_rate_pi_func, grad_of_pi_func,
+          grad_of_pi_func,
           # Delta Optimizer 依赖
-          learning_rate_delta_func, grad_of_delta_func,
+          grad_of_delta_func,
           # Theta Optimizer 依赖
-          learning_rate_theta_func, projection_Omega_func, grad_of_theta_func,
+          projection_Omega_func, grad_of_theta_func,
+          #learning rate
+          learning_rate_pi_func=None,
+          learning_rate_delta_func=None,
+          learning_rate_theta_func=None,
           # 求解器选择和迭代参数
+          theta_init = None,
           iterations=10000,
           iterations_pi=10000,
           iterations_delta=10000,
@@ -33,15 +38,16 @@ def TORCH(X, y, q, varrho,
     TORCH (Theta/Delta/Pi/Lambda Alternating Optimization) 求解器的主要迭代循环。
 
     Args:
-        X (np.ndarray): Design Matrix (n x p)。
-        y (np.ndarray or None): Response Matrix (n x m)。
-        q (int): Outlier Budget。
-        varrho (float): Penalty Parameter of TORCH。
-        ..._func: 所有的底层依赖函数。
-        iterations (int): 最大迭代次数。
-        theta_solver (str): Theta 优化算法 ('PGD' 或 'APGD')。
-        delta_solver (str): Pi 优化算法 ('PGD' 或 'Overrelaxation')。
-        pi_solver (str): Pi 优化算法 ('ED' 或 'AED')。
+        X (np.ndarray): Design Matrix (n x p).
+        y (np.ndarray or None): Response Matrix (n x m).
+        q (int): Outlier Budget.
+        varrho (float): Penalty Parameter of TORCH.
+        ..._func: 所有的底层依赖函数.
+        iterations (int): Maximum Iterations of TORCH.
+        iterations_pi (int): .
+        theta_solver (str): Theta 优化算法 ('PGD' 或 'APGD').
+        delta_solver (str): Pi 优化算法 ('PGD' 或 'Overrelaxation').
+        pi_solver (str): Pi 优化算法 ('ED' 或 'AED').
     """
 
     # --- 嵌套函数: 目标函数值 ---
@@ -55,7 +61,7 @@ def TORCH(X, y, q, varrho,
     # 获取维度
     n, p = X.shape  # N=样本数, P=特征数
 
-    if y is None:
+    if y is None or y.ndim == 1:
         # 如果 y 为 None (无监督场景), 将任务数 M 设置为 1
         m = 1
         # 警告: 确保所有依赖 y 的底层函数都被修改为不使用或忽略 y
@@ -74,38 +80,42 @@ def TORCH(X, y, q, varrho,
     # Delta: 维度 N (n x 1), 初始化为零向量
     delta = np.zeros(n)
 
-    # Theta (Coef): 维度 P x M, 初始化为零矩阵
-    if m == 1:
-        theta = np.zeros(p)
+    if theta_init == None:
+        # Theta (Coef): 维度 P x M, 初始化为零矩阵
+        # Lambda (乘子): 维度 P x M, 初始化为零矩阵
+        if m == 1:
+            theta = np.zeros(p)
+            lamb = np.zeros(p)
+        else:
+            theta = np.zeros((p, m))
+            lamb = np.zeros((p, m))
     else:
-        theta = np.zeros((p, m))
+        theta = theta_init
+        lamb = np.zeros_like(theta_init)
 
-    # Lambda (乘子): 维度 P x M, 初始化为零矩阵
-    if m == 1:
-        lamb = np.zeros(p)
-    else:
-        lamb = np.zeros((p, m))
+
 
     # 2. 实例化所有优化器类 (依赖注入)
     # 注意：这里假设您的 PiSolver, DeltaOptimizer, ThetaOptimizer 类已在外部定义
 
     pi_optimizer = PiOptimizer(
-        learning_rate_pi_func=learning_rate_pi_func,
         grad_of_pi_func=grad_of_pi_func,
-        function_value_func=function_value_func
+        function_value_func=function_value_func,
+        learning_rate_pi_func=learning_rate_pi_func
     )
 
     delta_optimizer = DeltaOptimizer(
-        learning_rate_delta_func=learning_rate_delta_func,
         grad_of_delta_func=grad_of_delta_func,
-        function_value_func=function_value_func
+        function_value_func=function_value_func,
+        q = q,
+        learning_rate_delta_func=learning_rate_delta_func
     )
 
     theta_optimizer = ThetaOptimizer(
-        learning_rate_theta_func=learning_rate_theta_func,
         projection_Omega_func=projection_Omega_func,
         grad_of_theta_func=grad_of_theta_func,
-        function_value_func=function_value_func
+        function_value_func=function_value_func,
+        learning_rate_theta_func=learning_rate_theta_func
     )
 
     # 3. 主迭代循环 (TORCH 算法)
@@ -163,7 +173,7 @@ def TORCH(X, y, q, varrho,
             )
         else:
             raise ValueError("Invalid pi_solver. Use 'ED' or 'AED'.")
-
+        print('stat', 2 * np.sum(-np.log(len(pi) * pi)))
         # --- 步骤 4: 更新 Lambda (P x M) ---
         # 外部传入的独立函数（通常是 ADMM/Augmented Lagrangian 的对偶更新）
         lamb = update_lamb_func(

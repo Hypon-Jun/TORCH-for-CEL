@@ -88,10 +88,16 @@ class PiOptimizer:
                  function_value_func):
 
         # 将用户提供的函数存储为实例属性
-        self.learning_rate_pi_func = learning_rate_pi_func
+        if learning_rate_pi_func is None:
+            self.learning_rate_pi_func = self._default_learning_rate_pi
+        else:
+            self.learning_rate_pi_func = learning_rate_pi_func
         self.grad_of_pi_func = grad_of_pi_func
         self.function_value_func = function_value_func
 
+    def _default_learning_rate_pi(self, pi, delta, lamb, varrho, X, y, theta):
+        init_learning_rate = 1.0
+        return self.line_search(pi, delta, lamb, varrho, X, y, theta, init_learning_rate)
     # --- 辅助函数：熵 (Entropy) ---
     @staticmethod
     def entropy(pi):

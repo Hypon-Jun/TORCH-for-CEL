@@ -24,14 +24,22 @@ class PiOptimizer:
     """
 
     def __init__(self,
-                 learning_rate_pi_func,
                  grad_of_pi_func,
-                 function_value_func):
+                 function_value_func,
+                 learning_rate_pi_func = None):
 
         # 存储用户提供的核心依赖
-        self.learning_rate_pi_func = learning_rate_pi_func
+        # 将用户提供的函数存储为实例属性
+        if learning_rate_pi_func is None:
+            self.learning_rate_pi_func = self._default_learning_rate_pi
+        else:
+            self.learning_rate_pi_func = learning_rate_pi_func
         self.grad_of_pi_func = grad_of_pi_func
         self.function_value_func = function_value_func
+
+    def _default_learning_rate_pi(self, pi, delta, lamb, varrho, X, y, theta):
+        init_learning_rate = 1.0
+        return self.line_search_mirror(pi, delta, lamb, varrho, X, y, theta, init_learning_rate)
 
     # =======================================================
     # II. 基础辅助函数 (来自 PiOptimizer)
@@ -197,11 +205,11 @@ class PiOptimizer:
 
         # 2. rho fixed, search mu
         mu_try = self.line_search_mu(beta_optimal_prev, theta, mu, rho, rho_try, mu_try,
-                                     alpha, beta, loss_function, grad_function)
+                                     alpha, beta, loss_function, grad_function, con=2.8, search_iterations=3)
 
         # 3. mu fixed, search rho
         rho_try = self.line_search_rho(beta_optimal_prev, theta, mu, rho, rho_try, mu_try,
-                                       alpha, beta, loss_function, grad_function)
+                                       alpha, beta, loss_function, grad_function, con=0.2, search_iterations=3)
 
         return mu_try, rho_try
 
@@ -240,7 +248,7 @@ class PiOptimizer:
 
     def update_pi_mirror(self, pi, delta, lamb, varrho, X, y, theta, iterations=10000):
         pi_update = pi.copy()
-        initial_rho = self.learning_rate_pi_func(pi_update, delta, lamb, varrho, X, y, theta) * 50
+        initial_rho = self.learning_rate_pi_func(pi_update, delta, lamb, varrho, X, y, theta) * 5
 
         for t in range(iterations):
             pi_tmp = pi_update.copy()
@@ -276,7 +284,7 @@ class PiOptimizer:
         mu = 1.0  # mu0
 
         # 初始 rho 设定
-        inverse_rho = self.learning_rate_pi_func(pi, delta, lamb, varrho, X, y, theta)
+        inverse_rho = self.learning_rate_pi_func(pi, delta, lamb, varrho, X, y, coef)
         rho = 1.0 / (inverse_rho * 5)  # rho0
 
         for iter in range(iterations):
@@ -327,16 +335,26 @@ class ThetaOptimizer:
     """
 
     def __init__(self,
-                 learning_rate_theta_func,
                  projection_Omega_func,
                  grad_of_theta_func,
-                 function_value_func):
+                 function_value_func,
+                 learning_rate_theta_func=None):
 
         # 存储用户提供的核心依赖
-        self.learning_rate_theta_func = learning_rate_theta_func
+        if learning_rate_theta_func is None:
+            self.learning_rate_theta_func = self._default_learning_rate_theta
+        else:
+            self.learning_rate_theta_func = learning_rate_theta_func
+
+
+
         self.projection_Omega_func = projection_Omega_func
         self.grad_of_theta_func = grad_of_theta_func
         self.function_value_func = function_value_func
+
+    def _default_learning_rate_theta(self, pi, delta, lamb, varrho, X, y, theta):
+        init_learning_rate = 1.0
+        return self.line_search_theta(pi, delta, lamb, varrho, X, y, theta, init_learning_rate)
 
     # =======================================================
     # II. 基础辅助函数 (L2 镜面函数)
@@ -585,7 +603,7 @@ class ThetaOptimizer:
             beta = self.beta_update(beta, alpha, theta)
 
             # --- 2. 检查收敛 ---
-            if np.abs(loss(alpha) - loss(alpha_tmp)) < 1e-6:
+            if np.abs(loss(alpha) - loss(alpha_tmp)) < 1e-3:
                 return alpha
 
             # --- 3. Line Search/参数更新 ---
@@ -617,14 +635,23 @@ class DeltaOptimizer:
     """
 
     def __init__(self,
-                 learning_rate_delta_func,
                  grad_of_delta_func,
-                 function_value_func):
+                 function_value_func,
+                 q,
+                 learning_rate_delta_func):
 
         # 将用户提供的函数存储为实例属性
-        self.learning_rate_delta_func = learning_rate_delta_func
+        if learning_rate_delta_func is None:
+            self.learning_rate_delta_func = self._default_learning_rate_delta
+        else:
+            self.learning_rate_delta_func = learning_rate_delta_func
         self.grad_of_delta_func = grad_of_delta_func
         self.function_value_func = function_value_func
+        self.q = q
+
+    def _default_learning_rate_delta(self, pi, delta, lamb, varrho, X, y, theta):
+        init_learning_rate = 1.0
+        return self.line_search_delta(pi, delta, lamb, varrho, X, y, theta, init_learning_rate, self.q)
 
     # --- 辅助函数：Box Quantile Thresholding ---
     @staticmethod
