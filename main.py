@@ -53,7 +53,7 @@ def projection_Omega(beta):
     #projected_beta[min_index] = 0
     return projected_beta
 
-for n_features in range(10, 11, 5):
+for n_features in range(100, 101, 5):
     iterations = 10000  # 迭代次数
     num_experiments = 20  # 重复实验次数
 
@@ -64,7 +64,7 @@ for n_features in range(10, 11, 5):
 
 
 
-    for n_samples in range(20, 21, 10):
+    for n_samples in range(250, 251, 10):
         print(f"Running for n_samples={n_samples}")
 
 

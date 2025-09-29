@@ -53,27 +53,43 @@ def grad_of_theta(pi, delta, lamb, varrho, X, y, theta):
 def TORCH_regression(X, y, q, varrho,
                      #projection to composite null
                      projection_Omega,
+                     theta_init = None,
                      iterations=10000,
                      theta_solver='PGD',
                      delta_solver='PGD',
                      pi_solver='ED'):
     """
-    基于 Augumented Lagrangian Method (ALM) 的 TORCH 求解器，专用于具有 L2 loss 的回归问题。
-    所有梯度、学习率和投影函数均使用内部硬编码的实现。
+        TORCH solver for regression setting.
+        All gradients, learning rates, and projection functions are internally hard-coded.
 
-    Args:
-        X (np.ndarray): 输入特征矩阵 (n x p)。
-        y (np.ndarray): 标签矩阵 (n x m)。
-        q (int): Delta 的 Box Quantile 约束参数。
-        varrho (float): 增广拉格朗日乘子法的惩罚超参数。
-        iterations (int): 最大迭代次数。
-        theta_solver (str): Theta 优化算法 ('PGD' 或 'APGD')。
-        delta_solver (str): Delta 优化算法 ('PGD' 或 'Overrelaxation')。
-        pi_solver (str): Pi 优化算法 ('ED' 或 'AED')。
+        Args:
+            X (np.ndarray): Input feature matrix of shape (n, p).
+            y (np.ndarray): Response matrix of shape (n,).
+            q (int): Box quantile parameter for δ, controlling the outlier budget.
+            projection_Omega (Callable): Projection operator to enforce θ within the composite null.
+            varrho (float, optional): Penalty parameter for the Augmented Lagrangian. Default is 1.0.
+            theta_init (np.ndarray, optional): Initial value for θ of shape (p,).
+                Defaults to a zero vector or matrix if None.
+            iterations (int, optional): Maximum number of iterations for the main TORCH loop. Default is 10000.
+            theta_solver (str, optional): Optimization algorithm for θ. Default is 'PGD'.
+                Supported options:
+                - 'PGD': Projected Gradient Descent
+                - 'APGD': Accelerated Projected Gradient Descent
+            delta_solver (str, optional): Optimization algorithm for δ. Default is 'PGD'.
+                Supported options:
+                - 'PGD': Projected Gradient Descent
+                - 'Overrelaxation': Over-relaxation update
+            pi_solver (str, optional): Optimization algorithm for π. Default is 'ED'.
+                Supported options:
+                - 'ED': Entropic Descent
+                - 'AED': Accelerated Entropic Descent
 
-    Returns:
-        tuple: 最终的 pi, delta, theta 结果。
-    """
+        Returns:
+            tuple: (pi, delta, theta), where
+                - pi (np.ndarray): Final optimized weight vector π.
+                - delta (np.ndarray): Final outlier indicator vector δ.
+                - theta (np.ndarray): Final parameter estimate θ.
+        """
 
     # 将所有的底层实现函数作为参数传入 TORCH 主函数
     return TORCH(
@@ -81,7 +97,7 @@ def TORCH_regression(X, y, q, varrho,
         y=y,
         q=q,
         varrho=varrho,
-
+        theta_init=theta_init,
         # 模型特有依赖 (这里是硬编码的)
         structure_constraint=structure_constraint,
         projection_Omega_func=projection_Omega,

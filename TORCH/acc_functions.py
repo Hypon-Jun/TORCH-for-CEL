@@ -13,23 +13,31 @@ def safe_trace(a, b):
 
 class PiOptimizer:
     """
-    封装了 pi 变量的优化逻辑，包括加速和非加速的熵正则化梯度下降。
+    Encapsulates the optimization logic for the variable π,
+    including both standard and accelerated entropic regularized gradient descent.
 
-    依赖注入（用户提供）：
-    - learning_rate_pi_func (初始学习率)
-    - grad_of_pi_func (pi 的梯度)
-    - function_value_func (目标函数值)
-    - mirror_function_func (镜面函数，默认为熵)
-    - grad_mirror_function_func (镜面函数的梯度，默认为熵的梯度)
+    Dependency injection (user-provided functions):
+    - learning_rate_pi_func: function providing the initial learning rate or step size.
+    - grad_of_pi_func: function computing the gradient with respect to π.
+    - function_value_func: function computing the objective function value.
     """
 
     def __init__(self,
                  grad_of_pi_func,
                  function_value_func,
                  learning_rate_pi_func = None):
+        """
+        Initialize the PiOptimizer with user-supplied functions.
 
-        # 存储用户提供的核心依赖
-        # 将用户提供的函数存储为实例属性
+        Args:
+            grad_of_pi_func (Callable): Gradient function of π.
+                Signature: grad_of_pi_func(pi, delta, lamb, varrho, X, y, theta) -> np.ndarray
+            function_value_func (Callable): Objective function evaluator.
+                signature: function_value_func(pi, delta, lamb, varrho, X, y, theta) -> float
+            learning_rate_pi_func (Callable, optional): Function to compute the learning rate for π.
+                Signature: learning_rate_pi_func(pi, delta, lamb, varrho, X, y, theta) -> float
+                If None, a default line-search strategy (_default_learning_rate_pi) is used.
+        """
         if learning_rate_pi_func is None:
             self.learning_rate_pi_func = self._default_learning_rate_pi
         else:
@@ -42,7 +50,7 @@ class PiOptimizer:
         return self.line_search_mirror(pi, delta, lamb, varrho, X, y, theta, init_learning_rate)
 
     # =======================================================
-    # II. 基础辅助函数 (来自 PiOptimizer)
+    # II. 基础辅助函数
     # =======================================================
 
     @staticmethod
@@ -104,15 +112,11 @@ class PiOptimizer:
 
     @staticmethod
     def alpha_update(gamma, alpha, theta, mu, rho, grad_function):
-        # 注意：此处 grad_function 应该是一个函数，返回的是 grad_loss(gamma)
         grad_gamma = grad_function(gamma)
 
-        # 指数更新，并确保数值稳定性
         exponent = - grad_gamma / (mu + theta * rho)
-        # pi * exp(...) 是 Proximal Mapping 的形式
         tmp = (gamma ** (mu / (mu + theta * rho))) * (alpha ** (theta * rho / (mu + theta * rho))) * np.exp(exponent)
 
-        # 归一化步骤，满足 pi 的和为 1 约束
         return tmp / np.sum(tmp)
 
     @staticmethod
@@ -156,7 +160,6 @@ class PiOptimizer:
                 U_array = -np.array(U_values)
                 min_value = np.min(U_array)
 
-                # 寻找在 [min_value, (1 + tolerance) * min_value] 范围内的最大索引
                 tolerance = 1e-2
                 if min_value > 0:
                     lower_bound = min_value
@@ -171,7 +174,7 @@ class PiOptimizer:
                 return mu_values[max_index]
 
             mu_try *= con
-        return mu_try  # 正常不应该执行到这里
+        return mu_try
 
     # --- Line Search for rho ---
     def line_search_rho(self, beta_optimal_prev, theta, mu, rho, rho_try, mu_try,
@@ -217,8 +220,8 @@ class PiOptimizer:
     # V. PGD 主循环 (非加速算法 - 兼容旧版)
     # =======================================================
     # 整合原来的 line_search 和 update_pi 逻辑
-    def line_search_mirror(self, pi, delta, lamb, varrho, X, y, theta, initial_rho, cons=0.5):
-        rho = initial_rho
+    def line_search_mirror(self, pi, delta, lamb, varrho, X, y, theta, initial_learning_rate, cons=0.5):
+        learning_rate = initial_learning_rate
         count = 0
 
         grad = self.grad_of_pi_func(pi, delta, lamb, varrho, X, y, theta)
@@ -226,36 +229,34 @@ class PiOptimizer:
 
         while count < 1000:
             count = count + 1
-            pi_tmp = pi * np.exp(-rho * grad)
+            pi_tmp = pi * np.exp(-learning_rate * grad)
             pi_tmp /= np.sum(pi_tmp)
 
             if np.any(np.isnan(pi_tmp)) or np.any(np.isinf(pi_tmp)):
-                rho *= cons
+                learning_rate *= cons
                 continue
 
-            # 左侧：Proximal Gradient Armijo Condition 
             lhs = self.entropy(pi_tmp) - self.entropy(pi) - np.dot(grad_of_entropy, pi_tmp - pi)
 
-            # 右侧：目标函数值下降项
-            rhs = rho * (self.function_value_func(pi_tmp, delta, lamb, varrho, X, y, theta) -
+            rhs = learning_rate * (self.function_value_func(pi_tmp, delta, lamb, varrho, X, y, theta) -
                          self.function_value_func(pi, delta, lamb, varrho, X, y, theta) -
                          np.dot(grad, pi_tmp - pi))
 
             if lhs >= rhs:
                 break
-            rho *= cons
-        return rho
+            learning_rate *= cons
+        return learning_rate
 
     def update_pi_mirror(self, pi, delta, lamb, varrho, X, y, theta, iterations=10000):
         pi_update = pi.copy()
-        initial_rho = self.learning_rate_pi_func(pi_update, delta, lamb, varrho, X, y, theta) * 5
+        initial_learning_rate = self.learning_rate_pi_func(pi_update, delta, lamb, varrho, X, y, theta) * 5
 
         for t in range(iterations):
             pi_tmp = pi_update.copy()
 
             # 调用内嵌的 line_search_mirror 方法
             rho = self.line_search_mirror(pi_update, delta, lamb, varrho, X, y,
-                                       theta, initial_rho=initial_rho)
+                                       theta, initial_learning_rate=initial_learning_rate)
 
             grad = self.grad_of_pi_func(pi_update, delta, lamb, varrho, X, y,
                                         theta)
@@ -325,13 +326,14 @@ class PiOptimizer:
 
 class ThetaOptimizer:
     """
-    封装了 theta 变量的优化逻辑，包括加速 (APGD) 和非加速 (PGD) 算法。
+    Encapsulates the optimization logic for the variable θ,
+    including both standard (PGD) and accelerated (APGD) algorithms.
 
-    依赖注入（用户提供）：
-    - learning_rate_theta_func (初始学习率)
-    - projection_Omega_func (投影函数)
-    - grad_of_theta_func (theta 的梯度)
-    - function_value_func (目标函数值)
+    Dependency injection (user-provided functions):
+    - learning_rate_theta_func: function providing the initial learning rate or step size for θ.
+    - projection_Omega_func: projection operator to ensure θ remains in the composite null.
+    - grad_of_theta_func: function computing the gradient with respect to θ.
+    - function_value_func: function computing the objective function value.
     """
 
     def __init__(self,
@@ -339,6 +341,24 @@ class ThetaOptimizer:
                  grad_of_theta_func,
                  function_value_func,
                  learning_rate_theta_func=None):
+        """
+            Initialize the ThetaOptimizer with user-supplied functions.
+
+            Args:
+                projection_Omega_func (Callable): Projection operator to ensure θ stays within
+                    the feasible set Ω. Signature: projection_Omega_func(theta) -> np.ndarray
+                grad_of_theta_func (Callable): Function computing the gradient w.r.t. θ.
+                    Signature: grad_of_theta_func(pi, delta, lamb, varrho, X, y, theta) -> np.ndarray
+                function_value_func (Callable): Function computing the objective value.
+                    Signature: function_value_func(pi, delta, lamb, varrho, X, y, theta) -> float
+                learning_rate_theta_func (Callable, optional): Function to compute the learning rate
+                    for θ updates. Signature: learning_rate_theta_func(pi, delta, lamb, varrho, X, y, theta) -> float
+                    If None, a default line-search strategy (_default_learning_rate_theta) is used.
+
+            Notes:
+                This class uses dependency injection to allow flexible projection
+                implementation provided by the user.
+        """
 
         # 存储用户提供的核心依赖
         if learning_rate_theta_func is None:
@@ -362,11 +382,8 @@ class ThetaOptimizer:
 
     @staticmethod
     def l2(pi):
-        """L2 镜面函数 (实际上是 L2 范数平方的一半)"""
         return np.sum(pi ** 2) / 2
 
-    # L2 范数（L2 范数平方的一半）的梯度就是 pi 本身，但 APGD 不需要明确的 grad_mirror_function。
-    # 我们保留 l2 作为 L2 空间中的“镜面函数”。
 
     # =======================================================
     # III. 加速算法辅助函数 (APGD)
@@ -378,7 +395,6 @@ class ThetaOptimizer:
         return loss(parameter1) - loss(parameter2) - safe_trace(grad_loss(parameter2), parameter1 - parameter2)
 
     def breg_l2(self, parameter1, parameter2):
-        """计算 L2 范数对应的 Bregman 散度 (即 L2 范数平方的一半)"""
         return np.sum((parameter1 - parameter2) ** 2) / 2
 
     def breg_psi(self, parameter1, parameter2, mu, loss, grad_loss):
@@ -386,7 +402,6 @@ class ThetaOptimizer:
             parameter1, parameter2)
 
     def C_2(self, parameter1, parameter2, theta):
-        """计算 C_2 镜面函数 (用于 L2 范数)"""
         return theta * self.l2(parameter1) + (1 - theta) * self.l2(parameter2) - self.l2(
             theta * parameter1 + (1 - theta) * parameter2)
 
@@ -411,7 +426,6 @@ class ThetaOptimizer:
         return (1 - theta) * beta.copy() + theta * alpha.copy()
 
     def alpha_update(self, gamma, alpha, theta, mu, rho, grad_function):
-        """L2 空间中的 Proximal Mapping 即为投影梯度步骤"""
         return self.projection_Omega_func(
             (mu * gamma.copy() + theta * rho * alpha.copy() - grad_function(gamma.copy())) / (mu + theta * rho)
         )
@@ -424,8 +438,8 @@ class ThetaOptimizer:
     # IV. PGD (非加速算法) 逻辑
     # =======================================================
 
-    def line_search_theta(self, pi, delta, lamb, varrho, X, y, theta, initial_rho, cons=0.5):
-        rho = initial_rho
+    def line_search_theta(self, pi, delta, lamb, varrho, X, y, theta, initial_learning_rate, cons=0.5):
+        learning_rate = initial_learning_rate
         count = 0
 
         # 调用注入的梯度函数
@@ -435,36 +449,34 @@ class ThetaOptimizer:
             count = count + 1
 
             # 调用注入的投影函数
-            tmp_theta = self.projection_Omega_func(theta.copy() - rho * grad)
+            tmp_theta = self.projection_Omega_func(theta.copy() - learning_rate * grad)
 
             lhs = np.sum((tmp_theta - theta) ** 2) / 2
 
-            rhs = rho * (self.function_value_func(pi, delta, lamb, varrho, X, y, tmp_theta) -
+            rhs = learning_rate * (self.function_value_func(pi, delta, lamb, varrho, X, y, tmp_theta) -
                          self.function_value_func(pi, delta, lamb, varrho, X, y, theta) -
                          safe_trace(grad, tmp_theta - theta))
 
             if lhs >= rhs:
                 break
 
-            rho *= cons
-        return rho
+            learning_rate *= cons
+        return learning_rate
 
     def update_theta_pgd(self, pi, delta, lamb, varrho, X, y, coef, iterations=10000):
-        """非加速 PGD 的主循环。"""
         theta_update = coef.copy()
 
-        # 注意：这里使用 coef 作为 theta 的初始值
-        initial_rho = self.learning_rate_theta_func(pi, delta, lamb, varrho, X, y, coef) * 5
+        initial_learning_rate = self.learning_rate_theta_func(pi, delta, lamb, varrho, X, y, coef) * 5
 
         for t in range(iterations):
             tmp_theta = theta_update.copy()
 
             # 调用内嵌的 line_search_theta 方法
-            rho = self.line_search_theta(pi, delta, lamb, varrho, X, y, theta_update.copy(), initial_rho=initial_rho)
+            learning_rate = self.line_search_theta(pi, delta, lamb, varrho, X, y, theta_update.copy(), initial_learning_rate=initial_learning_rate)
 
             # Projected GD 步骤
             grad = self.grad_of_theta_func(pi, delta, lamb, varrho, X, y, theta_update)
-            theta_update = self.projection_Omega_func(theta_update - rho * grad)
+            theta_update = self.projection_Omega_func(theta_update - learning_rate * grad)
 
             # 检查收敛条件
             if abs(self.function_value_func(pi, delta, lamb, varrho, X, y, theta_update) -
@@ -573,9 +585,6 @@ class ThetaOptimizer:
     # VI. 主加速算法 (APGD)
     # =======================================================
     def accelerated_PGD_theta(self, pi, delta, lamb, varrho, X, y, coef, iterations=10000):
-        """
-        加速投影梯度下降 (APGD) 算法的主循环。
-        """
 
         # 1. 内部柯里化（包装）损失和梯度函数
         loss = self._create_loss_wrapper(pi, delta, lamb, varrho, X, y)
@@ -609,7 +618,6 @@ class ThetaOptimizer:
             # --- 3. Line Search/参数更新 ---
             beta_optimal_prev = alpha.copy()
 
-            # 严格遵循原代码中的迭代条件
             if iter == 26:
                 mu = 1e-4
 
@@ -630,8 +638,13 @@ class ThetaOptimizer:
 
 class DeltaOptimizer:
     """
-    用于更新变量 delta 的优化器类。
-    在初始化时接收所有模型相关的核心函数（梯度、值函数、学习率等）作为依赖注入。
+    Encapsulates the optimization logic for the variable δ.
+
+    Dependency injection (user-provided functions):
+    - learning_rate_delta_func: function providing the initial learning rate or step size for δ.
+    - grad_of_delta_func: function computing the gradient with respect to δ.
+    - function_value_func: function computing the objective function value.
+    - q: outlier budget, controlling the maximum number of allowed outliers.
     """
 
     def __init__(self,
@@ -639,6 +652,22 @@ class DeltaOptimizer:
                  function_value_func,
                  q,
                  learning_rate_delta_func):
+
+        """
+                Initialize the DeltaOptimizer with user-provided functions.
+
+                Args:
+                    grad_of_delta_func (Callable): Function computing the gradient w.r.t. δ.
+                        Signature: grad_of_delta_func(pi, delta, lamb, varrho, X, y, theta) -> np.ndarray
+                    function_value_func (Callable): Function computing the objective value.
+                        Signature: function_value_func(pi, delta, lamb, varrho, X, y, theta) -> float
+                    q (int): Outlier budget, used in δ updates to control the number of allowed outliers.
+                    learning_rate_delta_func (Callable, optional): Function to compute the learning rate
+                        for δ updates. Signature: learning_rate_delta_func(pi, delta, lamb, varrho, X, y, theta) -> float
+                        If None, a default learning rate strategy (_default_learning_rate_delta) is used.
+
+
+        """
 
         # 将用户提供的函数存储为实例属性
         if learning_rate_delta_func is None:
@@ -656,20 +685,12 @@ class DeltaOptimizer:
     # --- 辅助函数：Box Quantile Thresholding ---
     @staticmethod
     def box_quantile_thresholding(y, q):
-        """
-        Implements the box-quantile thresholding operator Θ_{[0,1]}^{sharp}(y; q).
-        This method is static as it doesn't depend on any instance variables (self).
-        """
-        # Get the order statistics (sorted values in descending order)
-        # Sort y in descending order (y is typically a copy, so direct mutation is okay)
+
         sorted_indices = np.argsort(-y)
         y_sorted = y[sorted_indices]
 
         y_thresholded = np.zeros_like(y_sorted)
 
-        # Apply the thresholding rule
-        # Note: We use 1-based indexing logic from the original for clarity,
-        # but Python is 0-indexed. q represents the *count* of elements.
         for i in range(len(y_sorted)):
             if i < q:
                 # Top q elements
@@ -690,8 +711,8 @@ class DeltaOptimizer:
         return result
 
     # --- 核心函数 1: 内嵌的 line_search_delta ---
-    def line_search_delta(self, pi, delta, lamb, varrho, X, y, theta, q, initial_rho, cons=0.5):
-        rho = initial_rho
+    def line_search_delta(self, pi, delta, lamb, varrho, X, y, theta, q, initial_learning_rate, cons=0.5):
+        learning_rate = initial_learning_rate
         count = 0
 
         # 调用注入的梯度函数
@@ -700,42 +721,40 @@ class DeltaOptimizer:
         while count < 1000:
             count = count + 1
 
-            # 投影梯度步骤：等价于对 f(x) + (1/2\rho)*||x-y||^2 的 Proximal Mapping
-            tmp = np.maximum(delta - rho * grad, 0)
+
+            tmp = np.maximum(delta - learning_rate * grad, 0)
             tmp_delta = self.box_quantile_thresholding(tmp, q)
 
-            # Armijo 准则（用于投影梯度）的左侧：二次近似项
+
             lhs = np.sum((tmp_delta - delta) ** 2) / 2
 
-            # Armijo 准则的右侧：函数值下降项
-            rhs = rho * (self.function_value_func(pi, tmp_delta, lamb, varrho, X, y, theta) -
+
+            rhs = learning_rate * (self.function_value_func(pi, tmp_delta, lamb, varrho, X, y, theta) -
                          self.function_value_func(pi, delta, lamb, varrho, X, y, theta) -
                          np.dot(grad, tmp_delta - delta))
 
             if lhs >= rhs:
                 break
 
-            rho *= cons
-        return rho
+            learning_rate *= cons
+        return learning_rate
 
     # --- 核心函数 2: update_delta_optimal_rho (主循环) ---
     def update_delta_box_quantile(self, pi, delta, lamb, varrho, X, y, theta, q, iterations=10000):
         delta_update = delta.copy()
 
         # 调用注入的学习率函数
-        initial_rho = self.learning_rate_delta_func(pi, delta, lamb, varrho, X, y, theta) * 5
+        initial_learning_rate = self.learning_rate_delta_func(pi, delta, lamb, varrho, X, y, theta) * 5
 
         for t in range(iterations):
             tmp_delta = delta_update.copy()
 
-            # **调用内嵌的 line_search_delta 方法**
-            rho = self.line_search_delta(pi, delta_update.copy(), lamb, varrho, X, y, theta, q, initial_rho=initial_rho)
 
-            # 投影梯度下降步骤 (Proximal Gradient Descent)
+            learning_rate = self.line_search_delta(pi, delta_update.copy(), lamb, varrho, X, y, theta, q, initial_learning_rate=initial_learning_rate)
 
-            # 1. 梯度下降一步，并执行 ReLU (np.maximum(..., 0)) 以满足非负约束
+
             tmp = np.maximum(
-                delta_update.copy() - rho * self.grad_of_delta_func(pi, delta_update, lamb, varrho,
+                delta_update.copy() - learning_rate * self.grad_of_delta_func(pi, delta_update, lamb, varrho,
                                                                     X, y, theta), 0)
 
             # 2. 调用内嵌的 Box Quantile Thresholding 投影
@@ -765,20 +784,13 @@ class DeltaOptimizer:
     # =======================================================
 
     def accelerated_delta_overrelaxation(self, pi, delta, lamb, varrho, X, y, coef, q, w=1.5, iterations=10000):
-        """
-        使用超松弛 (Overrelaxation) 策略的加速投影梯度下降 (PGD) 算法。
 
-        此方法严格遵循原代码逻辑，使用学习率 lr 和 Box Quantile 投影。
-        """
 
         # 1. 内部柯里化（包装）损失和梯度函数
         loss = self._create_loss_wrapper(pi, lamb, varrho, X, y, coef)
         grad_loss = self._create_grad_wrapper(pi, lamb, varrho, X, y, coef)
 
         # 2. 初始化变量
-        # 注意：这里 learning_rate_delta 返回的可能是 1/L，即 rho 的倒数。
-        # 在 PGD 中，我们通常使用 rho 作为步长。我们使用 L=1/lr 作为平滑常数 L。
-        # 然而，原代码直接使用 learning_rate 作为步长（与梯度相乘）。
         learning_rate = self.learning_rate_delta_func(pi, delta, lamb, varrho, X, y, coef)
 
         xi = delta.copy()

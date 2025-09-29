@@ -5,27 +5,30 @@ import numpy as np
 def safe_trace(a, b):
     """Compute np.dot(a, b).
     If result is scalar, return scalar.
-    If result is matrix, return its trace."""
+    If result is matrix, return its trace.
+    """
     val = np.dot(a, b)
     if np.ndim(val) == 0:  # scalar
         return val.item()
     else:  # array/matrix
         return np.trace(val)
 
-def TORCH(X, y, q, varrho,
-          # 底层依赖函数
+def TORCH(X, y, q,
+          # Core dependency functions
           structure_constraint,
-          # Pi Solver 依赖
+          # Pi Solver dependencies
           grad_of_pi_func,
-          # Delta Optimizer 依赖
+          # Delta Optimizer dependencies
           grad_of_delta_func,
-          # Theta Optimizer 依赖
+          # Theta Optimizer dependencies
           projection_Omega_func, grad_of_theta_func,
-          #learning rate
+          # Learning rate functions
           learning_rate_pi_func=None,
           learning_rate_delta_func=None,
           learning_rate_theta_func=None,
-          # 求解器选择和迭代参数
+          # Penalty parameter of TORCH
+          varrho = 1.0,
+          # Solver choices and iteration parameters
           theta_init = None,
           iterations=10000,
           iterations_pi=10000,
@@ -35,19 +38,63 @@ def TORCH(X, y, q, varrho,
           delta_solver='PGD',
           pi_solver='ED'):
     """
-    TORCH (Theta/Delta/Pi/Lambda Alternating Optimization) 求解器的主要迭代循环。
+    TORCH main solver for CEL.
 
     Args:
         X (np.ndarray): Design Matrix (n x p).
         y (np.ndarray or None): Response Matrix (n x m).
-        q (int): Outlier Budget.
-        varrho (float): Penalty Parameter of TORCH.
-        ..._func: 所有的底层依赖函数.
-        iterations (int): Maximum Iterations of TORCH.
-        iterations_pi (int): .
-        theta_solver (str): Theta 优化算法 ('PGD' 或 'APGD').
-        delta_solver (str): Pi 优化算法 ('PGD' 或 'Overrelaxation').
-        pi_solver (str): Pi 优化算法 ('ED' 或 'AED').
+        q (int): Outlier budget, i.e., the maximum number of samples allowed to be detected as outliers.
+
+        structure_constraint (Callable): Function representing structural constraints of CEL.
+        grad_of_pi_func (Callable): Function computing the gradient w.r.t. π.
+            Interface: `grad_of_pi_func(pi, delta, lamb, varrho, X, y, theta) -> np.ndarray`.
+        grad_of_delta_func (Callable): Function computing the gradient w.r.t. δ.
+            Interface: `grad_of_delta_func(pi, delta, lamb, varrho, X, y, theta) -> np.ndarray`.
+        projection_Omega_func (Callable): Projection operator for θ to ensure it lies
+            within the composite null.
+        grad_of_theta_func (Callable): Function computing the gradient w.r.t. θ.
+            Interface: `grad_of_theta_func(pi, delta, lamb, varrho, X, y, theta) -> np.ndarray`.
+
+        learning_rate_pi_func (Callable, optional): Learning rate for π.
+            If None, a default line-search strategy is used to find the learning rate for π.
+            Interface: `learning_rate_pi_func(pi, delta, lamb, varrho, X, y, theta) -> float`.
+        learning_rate_delta_func (Callable, optional): Learning rate for δ.
+            If None, a default line-search strategy is used to find the learning rate for δ.
+            Interface: `learning_rate_delta_func(pi, delta, lamb, varrho, X, y, theta) -> float`.
+        learning_rate_theta_func (Callable, optional): Learning rate for θ.
+            If None, a default line-search strategy is used to find the learning rate for θ.
+            Interface: `learning_rate_theta_func(pi, delta, lamb, varrho, X, y, theta) -> float`.
+
+
+        varrho (float, optional): Penalty parameter of TORCH. Default is 1.0.
+
+        theta_init (np.ndarray, optional): Initialization for θ of shape (p,) or (p, m).
+            If None, defaults to a zero vector or matrix.
+
+        iterations (int, optional): Maximum number of iterations for the main TORCH loop.
+        iterations_pi (int, optional): Maximum number of iterations for the π subproblem.
+        iterations_delta (int, optional): Maximum number of iterations for the δ subproblem.
+        iterations_theta (int, optional): Maximum number of iterations for the θ subproblem.
+        theta_solver (str, optional): Optimization algorithm for θ. Default is 'PGD'.
+            Supported options:
+            - 'PGD': Projected Gradient Descent
+            - 'APGD': Accelerated Projected Gradient Descent
+
+        delta_solver (str, optional): Optimization algorithm for δ. Default is 'PGD'.
+            Supported options:
+            - 'PGD': Projected Gradient Descent
+            - 'Overrelaxation': Over-relaxation update
+
+        pi_solver (str, optional): Optimization algorithm for π. Default is 'ED'.
+            Supported options:
+            - 'ED': Entropic Descent
+            - 'AED': Accelerated Entropic Descent
+
+        Returns:
+        tuple: (pi, delta, theta), where
+            - pi (np.ndarray): Final optimized weight vector π.
+            - delta (np.ndarray): Final outlier indicator δ.
+            - theta (np.ndarray): Final parameter estimate θ.
     """
 
     # --- 嵌套函数: 目标函数值 ---
@@ -59,30 +106,27 @@ def TORCH(X, y, q, varrho,
         return lamb + varrho * structure_constraint(pi, delta, X, y, theta)
 
     # 获取维度
-    n, p = X.shape  # N=样本数, P=特征数
+    n, p = X.shape
 
     if y is None or y.ndim == 1:
-        # 如果 y 为 None (无监督场景), 将任务数 M 设置为 1
         m = 1
-        # 警告: 确保所有依赖 y 的底层函数都被修改为不使用或忽略 y
     else:
-        # 确保 y 的形状是 (N, M)
         if y.shape[0] != n:
-            raise ValueError("y 的样本数必须与 X 的样本数匹配。")
+            raise ValueError("The number of samples in y must match the number of samples in X.")
 
-        _, m = y.shape  # M=任务数 (M >= 1)
+        _, m = y.shape
 
-    # 1. 初始化变量 (Pi, Delta, Lamb, Theta)
+    # 1. Initialize variables (Pi, Delta, Lambda, Theta)
 
-    # Pi: 维度 N (n x 1), 初始化为均匀权重
+    # Pi: dimension n (n x 1), initialized as uniform weights
     pi = np.ones(n) / n
 
-    # Delta: 维度 N (n x 1), 初始化为零向量
+    # Delta: dimension n (n x 1), initialized as zero vector
     delta = np.zeros(n)
 
-    if theta_init == None:
-        # Theta (Coef): 维度 P x M, 初始化为零矩阵
-        # Lambda (乘子): 维度 P x M, 初始化为零矩阵
+    if theta_init is None:
+        # Theta (Coef): dimension p x m, initialized as zero matrix
+        # Lambda (Multiplier): dimension p x m, initialized as zero matrix
         if m == 1:
             theta = np.zeros(p)
             lamb = np.zeros(p)
@@ -93,10 +137,7 @@ def TORCH(X, y, q, varrho,
         theta = theta_init
         lamb = np.zeros_like(theta_init)
 
-
-
-    # 2. 实例化所有优化器类 (依赖注入)
-    # 注意：这里假设您的 PiSolver, DeltaOptimizer, ThetaOptimizer 类已在外部定义
+    # 2. Instantiate all optimizer classes (dependency injection)
 
     pi_optimizer = PiOptimizer(
         grad_of_pi_func=grad_of_pi_func,
@@ -118,16 +159,16 @@ def TORCH(X, y, q, varrho,
         learning_rate_theta_func=learning_rate_theta_func
     )
 
-    # 3. 主迭代循环 (TORCH 算法)
+    # 3. Main iteration loop (TORCH algorithm)
     for t in range(iterations):
-        # 保存前一步的值用于收敛检查
+        # Save previous values for convergence check
         tmp_pi = pi.copy()
         tmp_lamb = lamb.copy()
         tmp_delta = delta.copy()
         tmp_theta = theta.copy()
 
-        # --- 步骤 1: 更新 Theta (P x M) ---
-        # 调用 PGD 或 APGD 方法
+        # --- Step 1: Update Theta (p x m) ---
+        # Use either PGD or APGD method
         if theta_solver == 'PGD':
             theta = theta_optimizer.update_theta_pgd(
                 pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
@@ -141,8 +182,8 @@ def TORCH(X, y, q, varrho,
         else:
             raise ValueError("Invalid theta_solver. Use 'PGD' or 'APGD'.")
 
-        # --- 步骤 2: 更新 Delta (N) ---
-        # 使用 DeltaOptimizer 的 line search 或 accelerated overrelaxation
+        # --- Step 2: Update Delta (n) ---
+        # Use DeltaOptimizer with line search or accelerated overrelaxation
         if delta_solver == 'PGD':
             # 方案 1: PGD (带 Line Search 的 Proximal Gradient Descent)
             delta = delta_optimizer.update_delta_box_quantile(
@@ -158,15 +199,14 @@ def TORCH(X, y, q, varrho,
         else:
             raise ValueError("Invalid delta_solver. Use 'PGD' or 'Overrelaxation'.")
 
-        # --- 步骤 3: 更新 Pi (N) ---
-        # 调用 Entropic Descent (ED) 或 Accelerated Entropic Descent (AED) 方法
+        # --- Step 3: Update Pi (n) ---
+        # Use Entropic Descent (ED) or Accelerated Entropic Descent (AED)
         if pi_solver == 'ED':
             pi = pi_optimizer.update_pi_mirror(
                 pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
                 theta=theta, iterations=iterations_pi
             )
         elif pi_solver == 'AED':
-            # 假设 accelerated_entropic_descent 是 APGD 的一个变体
             pi = pi_optimizer.accelerated_entropic_descent(
                 pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y,
                 coef=theta, iterations=iterations_pi
@@ -174,14 +214,13 @@ def TORCH(X, y, q, varrho,
         else:
             raise ValueError("Invalid pi_solver. Use 'ED' or 'AED'.")
         print('stat', 2 * np.sum(-np.log(len(pi) * pi)))
-        # --- 步骤 4: 更新 Lambda (P x M) ---
-        # 外部传入的独立函数（通常是 ADMM/Augmented Lagrangian 的对偶更新）
+        # --- Step 4: Update Lambda (p x m) ---
         lamb = update_lamb_func(
             pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y, theta=theta
         )
 
-        # --- 步骤 5: 检查收敛条件 ---
-        # 检查目标函数值是否稳定
+        # --- Step 5: Check convergence ---
+        # Check if the objective function value is stable
         current_value = function_value_func(pi, delta, lamb, varrho, X, y, theta)
         previous_value = function_value_func(tmp_pi, tmp_delta, tmp_lamb, varrho, X, y, tmp_theta)
 

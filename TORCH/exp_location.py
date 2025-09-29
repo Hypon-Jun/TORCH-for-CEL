@@ -66,21 +66,33 @@ def TORCH_location(X, q, varrho,
                      delta_solver='PGD',
                      pi_solver='ED'):
     """
-    基于 Augumented Lagrangian Method (ALM) 的 TORCH 求解器，专用于具有 L2 loss 的回归问题。
-    所有梯度、学习率和投影函数均使用内部硬编码的实现。
+        TORCH solver for location setting.
 
-    Args:
-        X (np.ndarray): 输入特征矩阵 (n x p)。
-        q (int): Delta 的 Box Quantile 约束参数。
-        varrho (float): 增广拉格朗日乘子法的惩罚超参数。
-        iterations (int): 最大迭代次数。
-        theta_solver (str): Theta 优化算法 ('PGD' 或 'APGD')。
-        delta_solver (str): Delta 优化算法 ('PGD' 或 'Overrelaxation')。
-        pi_solver (str): Pi 优化算法 ('ED' 或 'AED')。
+        Args:
+            X (np.ndarray): Input feature matrix of shape (n, p).
+            q (int): Box quantile parameter for δ, controlling the outlier budget.
+            varrho (float): Penalty parameter for the Augmented Lagrangian method.
+            projection_Omega (Callable): Projection operator to enforce θ within the composite null space.
+            iterations (int, optional): Maximum number of iterations for the TORCH loop. Default is 10000.
+            theta_solver (str, optional): Optimization algorithm for θ. Default is 'PGD'.
+                Supported options:
+                - 'PGD': Projected Gradient Descent
+                - 'APGD': Accelerated Projected Gradient Descent
+            delta_solver (str, optional): Optimization algorithm for δ. Default is 'PGD'.
+                Supported options:
+                - 'PGD': Projected Gradient Descent
+                - 'Overrelaxation': Over-relaxation update
+            pi_solver (str, optional): Optimization algorithm for π. Default is 'ED'.
+                Supported options:
+                - 'ED': Entropic Descent
+                - 'AED': Accelerated Entropic Descent
 
-    Returns:
-        tuple: 最终的 pi, delta, theta 结果。
-    """
+        Returns:
+            tuple: (pi, delta, theta), where
+                - pi (np.ndarray): Final optimized weight vector π.
+                - delta (np.ndarray): Final outlier indicator δ.
+                - theta (np.ndarray): Final location parameter θ.
+        """
 
     # 将所有的底层实现函数作为参数传入 TORCH 主函数
     return TORCH(
