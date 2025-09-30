@@ -13,7 +13,7 @@ def safe_trace(a, b):
     else:  # array/matrix
         return np.trace(np.dot(a.T, b))
 
-def TORCH(X, y, q,
+def TORCH_CEL(X, y, q,
           # Core dependency functions
           structure_constraint,
           # Pi Solver dependencies

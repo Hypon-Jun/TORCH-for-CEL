@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.linalg import eigh
-from .utils import TORCH
+from .utils import TORCH_CEL
 
 def structure_constraint(pi, delta, X, y, theta):
     # Step 1: Compute X - mu (n x m)
@@ -95,7 +95,7 @@ def TORCH_location(X, q, varrho,
         """
 
     # 将所有的底层实现函数作为参数传入 TORCH 主函数
-    return TORCH(
+    return TORCH_CEL(
         X=X,
         y=None,
         q=q,

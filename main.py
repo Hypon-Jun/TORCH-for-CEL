@@ -1,4 +1,4 @@
-from TORCH import TORCH, PiOptimizer, TORCH_regression, TORCH_location
+from TORCH_CEL import TORCH_CEL, PiOptimizer, TORCH_regression, TORCH_location
 import numpy as np
 import time
 

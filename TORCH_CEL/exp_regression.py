@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.linalg import eigh
-from .utils import TORCH
+from .utils import TORCH_CEL
 
 def structure_constraint(pi, delta, X, y, theta):
     return np.dot(np.dot((X.copy()).T, np.diag(pi.copy() * (1 - delta.copy()))), (np.dot(X.copy(), theta.copy()) - y.copy()))
@@ -92,7 +92,7 @@ def TORCH_regression(X, y, q, varrho,
         """
 
     # 将所有的底层实现函数作为参数传入 TORCH 主函数
-    return TORCH(
+    return TORCH_CEL(
         X=X,
         y=y,
         q=q,
