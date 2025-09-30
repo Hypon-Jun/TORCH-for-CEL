@@ -213,7 +213,6 @@ def TORCH_CEL(X, y, q,
             )
         else:
             raise ValueError("Invalid pi_solver. Use 'ED' or 'AED'.")
-        print('stat', 2 * np.sum(-np.log(len(pi) * pi)))
         # --- Step 4: Update Lambda (p x m) ---
         lamb = update_lamb_func(
             pi=pi, delta=delta, lamb=lamb, varrho=varrho, X=X, y=y, theta=theta

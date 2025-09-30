@@ -19,7 +19,7 @@ pip install git+https://github.com/Hypon-Jun/TORCH-for-CEL
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.7+
 - numpy 1.21+
 - scipy 1.5+
 
