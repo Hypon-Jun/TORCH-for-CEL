@@ -107,9 +107,9 @@ pi, delta, theta = TORCH_CEL(X, y, q,
   
   # Example projection operator
   def projection_Omega_func(theta):
-      projected_beta = beta.copy()
-      projected_beta[0] = 9
-      return projected_beta
+      projected_theta = theta.copy()
+      projected_theta[0] = 9
+      return projected_theta
   
   # Example gradient function for pi
   def grad_of_pi_func(pi, delta, lamb, varrho, X, y, theta):
@@ -191,9 +191,9 @@ from TORCH_CEL import TORCH_regression
 
 # Define the projection operator for the composite null
 def projection_Omega(theta):
-    projected_beta = beta.copy()
-    projected_beta[0] = 9
-    return projected_beta
+    projected_theta = theta.copy()
+    projected_theta[0] = 9
+    return projected_theta
 
 # Settings
 n_features = 100
