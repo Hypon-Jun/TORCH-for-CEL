@@ -8,7 +8,7 @@ setup(
         "numpy>=1.21",
         "scipy>=1.5"
     ],
-    python_requires=">=3.8, <3.10",  # 指定 Python 版本
+    python_requires=">=3.7, <3.10",  # 指定 Python 版本
     description="Tri-block Operator splitting for Resistant Composite Hypothesis (TORCH) solver package for Compound Empirical Likelihood (CEL).",
     author="Zhaojun Hu",
     url="https://github.com/Hypon-Jun/TORCH-for-CEL",
