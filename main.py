@@ -97,8 +97,8 @@ for n_features in range(100, 101, 5):
             noise = np.random.normal(0, 4, n_samples)
             y = np.dot(X, beta) + noise
             q = int(np.floor(n_samples * 0.15))
-            q = 0
-            #y[-q:] = 1000
+            #q = 0
+            y[-q:] = 1000
 
             varrho = 30
             start_time = time.time()

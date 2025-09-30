@@ -11,7 +11,7 @@ def safe_trace(a, b):
     if np.ndim(val) == 0:  # scalar
         return val.item()
     else:  # array/matrix
-        return np.trace(val)
+        return np.trace(np.dot(a.T, b))
 
 def TORCH(X, y, q,
           # Core dependency functions
