@@ -1,4 +1,4 @@
-# TORCH
+# TORCH_CEL
 
 This Python package implements a scalable joint optimization framework for **compound empirical likelihood (CEL)**. It provides a general, nonparametric, and robust inference framework that allows for outliers in each estimating function, enhancing robustness under composite null hypotheses.
 
@@ -25,12 +25,12 @@ pip install git+https://github.com/Hypon-Jun/TORCH-for-CEL
 
 ## General CEL Problem Usage
 
-For more flexible applications beyond the provided examples, users can call the general `TORCH` solver by providing their own gradient functions and projection operators:
+For more flexible applications beyond the provided examples, users can call the general `TORCH_CEL` solver by providing their own gradient functions and projection operators:
 
 ```python
-from TORCH import TORCH
+from TORCH_CEL import TORCH_CEL
 
-pi, delta, theta = TORCH(X, y, q,
+pi, delta, theta = TORCH_CEL(X, y, q,
           # Core dependency functions
           structure_constraint,
           # Pi Solver dependencies
@@ -156,7 +156,7 @@ pi, delta, theta = TORCH(X, y, q,
 
 ```python
 import numpy as np
-from TORCH import TORCH_location
+from TORCH_CEL import TORCH_location
 
 # Define the projection operator for the composite null
 def projection_Omega(theta):
@@ -187,7 +187,7 @@ print("Test statistic:", statistic)
 ```python
 import numpy as np
 import time
-from TORCH import TORCH_regression
+from TORCH_CEL import TORCH_regression
 
 # Define the projection operator for the composite null
 def projection_Omega(theta):
@@ -222,7 +222,7 @@ print("Test statistic:", statistic)
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or submit a pull request if you’d like to improve TORCH.
+Contributions are welcome! Please open an issue or submit a pull request if you’d like to improve TORCH_CEL.
 
 ## License
 
