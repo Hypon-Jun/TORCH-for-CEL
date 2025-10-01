@@ -7,7 +7,7 @@ def safe_trace(a, b):
     If result is scalar, return scalar.
     If result is matrix, return its trace.
     """
-    val = np.dot(a, b)
+    val = np.dot(a.T, b)
     if np.ndim(val) == 0:  # scalar
         return val.item()
     else:  # array/matrix
